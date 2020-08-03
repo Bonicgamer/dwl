@@ -270,6 +270,7 @@ static Monitor *selmon;
 
 struct wlr_pointer_constraints_v1 *pointer_constraints;
 struct wlr_pointer_constraint_v1 *active_constraint;
+static int active_confine_requires_warp = 0;
 
 static Atom netatom[NetLast];
 
