@@ -35,7 +35,7 @@ pointer-constraints-unstable-v1-protocol.o: pointer-constraints-unstable-v1-prot
 config.h: | config.def.h
 	cp config.def.h $@
 
-dwl.o: config.h xdg-shell-protocol.h
+dwl.o: config.h xdg-shell-protocol.h pointer-constraints-unstable-v1-protocol.h
 
 dwl: xdg-shell-protocol.o pointer-constraints-unstable-v1-protocol.o
 
