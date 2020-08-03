@@ -543,6 +543,9 @@ createmon(struct wl_listener *listener, void *data)
 	wl_signal_add(&wlr_output->events.frame, &m->frame);
 	m->destroy.notify = cleanupmon;
 	wl_signal_add(&wlr_output->events.destroy, &m->destroy);
+	
+	pointer_constraints = wlr_pointer_constraints_v1_create(dpy);
+	wl_signal_add(&pointer_constraints->events.new_constraint, &pointer_constraint_create);
 
 	wl_list_insert(&mons, &m->link);
 
@@ -1086,6 +1089,12 @@ motionnotify(uint32_t time)
 				"left_ptr", cursor);
 
 	pointerfocus(c, surface, sx, sy, time);
+}
+
+void
+pointerconstraintsetregion(struct wl_listener *listener, void *data)
+{
+	active_confine_requires_warp = 1;
 }
 
 void
