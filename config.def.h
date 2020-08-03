@@ -31,6 +31,9 @@ static const MonitorRule monrules[] = {
 	{ NULL,       0.55, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL },
 };
 
+/* pointer constraint */
+static const int allow_constrain    = 1;
+
 /* keyboard */
 static const struct xkb_rule_names xkb_rules = {
 	/* can specify fields: rules, model, layout, variant, options */
