@@ -76,7 +76,8 @@ typedef struct {
 } Button;
 
 typedef struct Monitor Monitor;
-typedef struct {
+typedef struct Client Client;
+struct Client {
 	struct wl_list link;
 	struct wl_list flink;
 	struct wl_list slink;
@@ -101,8 +102,11 @@ typedef struct {
 	int bw;
 	unsigned int tags;
 	int isfloating, isterminal, noswallow;
+	pid_t pid;
+	Client *swallowing;
+	Client *swallowedby;
 	uint32_t resize; /* configure serial of a pending resize */
-} Client;
+};
 
 typedef struct {
 	struct wl_listener request_mode;
