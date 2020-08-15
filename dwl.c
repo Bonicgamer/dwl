@@ -178,7 +178,7 @@ struct render_data {
 
 /* function declarations */
 static void applybounds(Client *c, struct wlr_box *bbox);
-static void applyrules(Client *c);
+static void applyrules(Client *c, int dosetmon);
 static void arrange(Monitor *m);
 static void axisnotify(struct wl_listener *listener, void *data);
 static void buttonpress(struct wl_listener *listener, void *data);
@@ -327,7 +327,7 @@ applybounds(Client *c, struct wlr_box *bbox)
 }
 
 void
-applyrules(Client *c)
+applyrules(Client *c, int dosetmon)
 {
 	const char *appid, *title;
 	unsigned int i, newtags = 0;
@@ -365,7 +365,8 @@ applyrules(Client *c)
 					mon = m;
 		}
 	}
-	setmon(c, mon, newtags);
+	if (dosetmon)
+		setmon(c, mon, newtags);
 }
 
 void
@@ -609,6 +610,7 @@ createnotify(struct wl_listener *listener, void *data)
 	wl_client_get_credentials(c->surface.xdg->client->client, &c->pid, NULL, NULL);
 	c->destroy.notify = destroynotify;
 	
+	applyrules(c, 0);
 	term = termforwin(c);
 	if (term) {
 		swallow(term, c);
@@ -990,7 +992,7 @@ maprequest(struct wl_listener *listener, void *data)
 	}
 
 	/* Set initial monitor, tags, floating status, and focus */
-	applyrules(c);
+	applyrules(c, 1);
 }
 
 void
