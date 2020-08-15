@@ -100,7 +100,7 @@ typedef struct {
 #endif
 	int bw;
 	unsigned int tags;
-	int isfloating;
+	int isfloating, isterminal, noswallow;
 	uint32_t resize; /* configure serial of a pending resize */
 } Client;
 
@@ -352,6 +352,8 @@ applyrules(Client *c)
 		if ((!r->title || strstr(title, r->title))
 				&& (!r->id || strstr(appid, r->id))) {
 			c->isfloating = r->isfloating;
+			c->isterminal = r->isterminal;
+			c->noswallow = r->noswallow;
 			newtags |= r->tags;
 			i = 0;
 			wl_list_for_each(m, &mons, link)
