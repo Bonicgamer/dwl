@@ -1805,7 +1805,7 @@ termforwin(const Client *w)
 {
         Client *c;
 
-        if (!w->pid || w->isterminal)
+        if (!w->pid || w->isterminal || w->noswallow)
                 return NULL;
 
         wl_list_for_each(c, &stack, slink)
