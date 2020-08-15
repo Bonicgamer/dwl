@@ -159,6 +159,8 @@ typedef struct {
 	const char *title;
 	unsigned int tags;
 	int isfloating;
+	int isterminal;
+	int noswallow;
 	int monitor;
 } Rule;
 
@@ -236,6 +238,10 @@ static void view(const Arg *arg);
 static Client *xytoclient(double x, double y);
 static Monitor *xytomon(double x, double y);
 static void zoom(const Arg *arg);
+
+static pid_t getparentprocess(pid_t p);
+static int isdescprocess(pid_t p, pid_t c);
+static Client *termforwin(const Client *c);
 
 /* variables */
 static const char broken[] = "broken";
@@ -377,6 +383,27 @@ axisnotify(struct wl_listener *listener, void *data)
 	wlr_seat_pointer_notify_axis(seat,
 			event->time_msec, event->orientation, event->delta,
 			event->delta_discrete, event->source);
+}
+
+void
+swallow(Client *p, Client *c)
+{
+	void *w;
+
+	if (c->noswallow || c->isterminal)
+                return;
+        if (c->noswallow && !swallowfloating && c->isfloating)
+                return;
+        p->swallowing = c;
+	c->swallowedby = p;
+        c->mon = p->mon;
+
+    	w = p->surface.xdg;
+        p->surface = c->surface;
+    	c->surface.xdg = w;
+	
+  	focusclient(c, p, 0);
+        arrange(p->mon);
 }
 
 void
@@ -559,6 +586,7 @@ createnotify(struct wl_listener *listener, void *data)
 	 * client, either a toplevel (application window) or popup. */
 	struct wlr_xdg_surface *xdg_surface = data;
 	Client *c;
+	Client *term = NULL;
 
 	if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL)
 		return;
@@ -571,16 +599,33 @@ createnotify(struct wl_listener *listener, void *data)
 	/* Tell the client not to try anything fancy */
 	wlr_xdg_toplevel_set_tiled(c->surface.xdg, WLR_EDGE_TOP |
 			WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
-
-	/* Listen to the various events it can emit */
-	c->commit.notify = commitnotify;
-	wl_signal_add(&xdg_surface->surface->events.commit, &c->commit);
-	c->map.notify = maprequest;
-	wl_signal_add(&xdg_surface->events.map, &c->map);
-	c->unmap.notify = unmapnotify;
-	wl_signal_add(&xdg_surface->events.unmap, &c->unmap);
+	
+	wl_client_get_credentials(c->surface.xdg->client->client, &c->pid, NULL, NULL);
 	c->destroy.notify = destroynotify;
-	wl_signal_add(&xdg_surface->events.destroy, &c->destroy);
+	
+	term = termforwin(c);
+	if (term) {
+		swallow(term, c);
+		
+		wl_list_remove(&term->commit.link);
+		wl_list_remove(&term->unmap.link);
+		wl_list_remove(&term->destroy.link);
+
+		wl_signal_add(&xdg_surface->surface->events.commit, &term->commit);
+		wl_signal_add(&xdg_surface->events.unmap, &term->unmap);
+		wl_signal_add(&xdg_surface->events.destroy, &term->destroy);
+
+		wl_signal_add(&c->surface.xdg->events.destroy, &c->destroy);
+	} else {
+		/* Listen to the various events it can emit */
+		c->commit.notify = commitnotify;
+		wl_signal_add(&xdg_surface->surface->events.commit, &c->commit);
+		c->map.notify = maprequest;
+		wl_signal_add(&xdg_surface->events.map, &c->map);
+		c->unmap.notify = unmapnotify;
+		wl_signal_add(&xdg_surface->events.unmap, &c->unmap);
+		wl_signal_add(&xdg_surface->events.destroy, &c->destroy);
+	}
 }
 
 void
@@ -624,7 +669,14 @@ destroynotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is destroyed and should never be shown again. */
 	Client *c = wl_container_of(listener, c, destroy);
-	wl_list_remove(&c->map.link);
+	if (c->swallowedby) {
+		c->swallowedby->swallowing = NULL;
+		wl_list_remove(&c->destroy.link);
+		free(c);
+		return;
+	}
+	if (!c->swallowing)
+		wl_list_remove(&c->map.link);
 	wl_list_remove(&c->unmap.link);
 	wl_list_remove(&c->destroy.link);
 #ifdef XWAYLAND
@@ -633,7 +685,21 @@ destroynotify(struct wl_listener *listener, void *data)
 	else if (c->type == XDGShell)
 #endif
 		wl_list_remove(&c->commit.link);
-	free(c);
+	if (c->swallowing) {
+		//focusclient(NULL, c->swallowing, 0);
+		wl_list_remove(&c->swallowing->destroy.link);
+		c->surface.xdg = c->swallowing->surface.xdg;
+		focusclient(NULL, c, 0);
+		free(c->swallowing);
+		c->swallowing = NULL;
+
+
+		resize(c, c->geom.x, c->geom.y, c->geom.width, c->geom.height, 0);
+		wl_signal_add(&c->surface.xdg->surface->events.commit, &c->commit);
+		wl_signal_add(&c->surface.xdg->surface->events.destroy, &c->destroy);
+		wl_signal_add(&c->surface.xdg->events.unmap, &c->unmap);
+	} else
+		free(c);
 }
 
 void
@@ -1674,6 +1740,8 @@ unmapnotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is unmapped, and should no longer be shown. */
 	Client *c = wl_container_of(listener, c, unmap);
+	if (c->swallowing)
+		return;
 	wl_list_remove(&c->link);
 #ifdef XWAYLAND
 	if (c->type == X11Unmanaged)
@@ -1695,6 +1763,48 @@ view(const Arg *arg)
 		selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
 	focusclient(sel, focustop(selmon), 1);
 	arrange(selmon);
+}
+
+pid_t
+getparentprocess(pid_t p)
+{
+        unsigned int v = 0;
+
+        FILE *f;
+        char buf[256];
+        snprintf(buf, sizeof(buf) - 1, "/proc/%u/stat", (unsigned)p);
+
+        if (!(f = fopen(buf, "r")))
+                return 0;
+
+        fscanf(f, "%*u %*s %*c %u", &v);
+        fclose(f);
+
+        return (pid_t)v;
+}
+
+int
+isdescprocess(pid_t p, pid_t c)
+{
+        while (p != c && c != 0)
+                c = getparentprocess(c);
+
+        return (int)c;
+}
+
+Client *
+termforwin(const Client *w)
+{
+        Client *c;
+
+        if (!w->pid || w->isterminal)
+                return NULL;
+
+        wl_list_for_each(c, &stack, slink)
+                        if (c->isterminal && !c->swallowing && c->pid && isdescprocess(c->pid, w->pid))
+                                return c;
+
+        return NULL;
 }
 
 Client *
