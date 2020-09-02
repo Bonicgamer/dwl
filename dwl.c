@@ -393,27 +393,6 @@ axisnotify(struct wl_listener *listener, void *data)
 }
 
 void
-swallow(Client *p, Client *c)
-{
-	void *w;
-
-	if (c->noswallow || c->isterminal)
-                return;
-        if (c->noswallow && !swallowfloating && c->isfloating)
-                return;
-        p->swallowing = c;
-	c->swallowedby = p;
-        c->mon = p->mon;
-
-    	w = p->surface.xdg;
-        p->surface = c->surface;
-    	c->surface.xdg = w;
-	
-  	focusclient(c, p, 0);
-        arrange(p->mon);
-}
-
-void
 buttonpress(struct wl_listener *listener, void *data)
 {
 	struct wlr_event_pointer_button *event = data;
@@ -594,6 +573,7 @@ createnotify(struct wl_listener *listener, void *data)
 	struct wlr_xdg_surface *xdg_surface = data;
 	Client *c;
 	Client *term = NULL;
+	void *tmpptr;
 
 	if (xdg_surface->role != WLR_XDG_SURFACE_ROLE_TOPLEVEL)
 		return;
@@ -608,12 +588,19 @@ createnotify(struct wl_listener *listener, void *data)
 			WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 	
 	wl_client_get_credentials(c->surface.xdg->client->client, &c->pid, NULL, NULL);
+	
 	c->destroy.notify = destroynotify;
 	
 	applyrules(c, 0);
 	term = termforwin(c);
 	if (term) {
-		swallow(term, c);
+		term->swallowing = c;
+		c->swallowedby = term;
+		c->mon = term->mon;
+
+		tmpptr = term->surface.xdg;
+		term->surface = c->surface;
+		c->surface.xdg = tmpptr;
 		
 		wl_list_remove(&term->commit.link);
 		wl_list_remove(&term->unmap.link);
@@ -624,6 +611,10 @@ createnotify(struct wl_listener *listener, void *data)
 		wl_signal_add(&xdg_surface->events.destroy, &term->destroy);
 
 		wl_signal_add(&c->surface.xdg->events.destroy, &c->destroy);
+		
+		resize(term, term->geom.x, term->geom.y, term->geom.width, term->geom.height, 0);
+		focusclient(c, term, 0);
+		arrange(term->mon);
 	} else {
 		/* Listen to the various events it can emit */
 		c->commit.notify = commitnotify;
