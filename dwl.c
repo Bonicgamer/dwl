@@ -28,6 +28,7 @@
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_viewporter.h>
@@ -286,6 +287,7 @@ static Monitor *selmon;
 struct wlr_pointer_constraints_v1 *pointer_constraints;
 struct wlr_pointer_constraint_v1 *active_constraint;
 static struct wl_listener constraint_commit;
+struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
 
 /* global event handlers */
 static struct wl_listener cursor_axis = {.notify = axisnotify};
@@ -1096,12 +1098,16 @@ motionrelative(struct wl_listener *listener, void *data)
 	 * special configuration applied for the specific input device which
 	 * generated the event. You can pass NULL for the device if you want to move
 	 * the cursor around without any input. */
-	if (active_constraint == NULL) {
+	wlr_relative_pointer_manager_v1_send_relative_motion(
+		relative_pointer_manager,
+		seat, (uint64_t)event->time_msec * 1000,
+		event->delta_x, event->delta_y, event->unaccel_dx, event->unaccel_dy);
+
+	if (!active_constraint) {
 		wlr_cursor_move(cursor, event->device,
 			event->delta_x, event->delta_y);
 		motionnotify(event->time_msec);
-	} else
-		wlr_seat_pointer_notify_motion(seat, event->time_msec, event->delta_x, event->delta_y);
+	}
 }
 
 void
@@ -1598,6 +1604,8 @@ setup(void)
 
 	pointer_constraints = wlr_pointer_constraints_v1_create(dpy);
 	wl_signal_add(&pointer_constraints->events.new_constraint, &pointer_constraint_create);
+	
+	relative_pointer_manager = wlr_relative_pointer_manager_v1_create(dpy);
 
 	/*
 	 * Creates a cursor, which is a wlroots utility for tracking the cursor
