@@ -1106,8 +1106,8 @@ motionrelative(struct wl_listener *listener, void *data)
 	if (!active_constraint) {
 		wlr_cursor_move(cursor, event->device,
 			event->delta_x, event->delta_y);
-		motionnotify(event->time_msec);
 	}
+	motionnotify(event->time_msec);
 }
 
 void
